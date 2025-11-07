@@ -1,0 +1,20 @@
+databases:
+  dbAppA:
+    host: 127.0.0.1
+    port: "3306"
+    user: root
+    password: ""
+    name: zhixietong
+
+  dbAppB:
+    host: 127.0.0.1
+    port: "3306"
+    user: root
+    password: ""
+    name: gateway_test
+#    host: 18.162.166.101
+#    port: "3306"
+#    user: gateway_test
+#    password: "4C4rbbs3jKiMdXAK"
+#    name: gateway_test
+

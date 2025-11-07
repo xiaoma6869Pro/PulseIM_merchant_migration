@@ -1,0 +1,4 @@
+dbAppA: dbAppA                      # 名字查 App-A
+dbAppB: dbAppB                      # 名字查 App-B
+organizationAppAId: 3               # 企业ID App-A
+organizationAppBId: 2               # 企业ID App-B
