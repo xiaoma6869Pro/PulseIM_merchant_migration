@@ -118,8 +118,21 @@ func ImportUserAppAToAppB(dbAppB string, userMigrationModel models.UserMigration
 		organizationUserA.OrganizationId = organization.ID
 		organizationUserA.UniqueValue = strconv.Itoa(int(organization.ID)) + "-" + strconv.Itoa(int(user.ID))
 		organizationUserA.UserId = user.ID
-		organizationUserA.ImUserId = ""
 		organizationUserA.ID = 0
+
+		if organizationUserA.InvitationUserId > 0 {
+			
+			var _user models.User
+			if err := conn.Table(models.UserTbl()).Where("id = ?", organizationUserA.InvitationUserId).Find(&_user).Error; err != nil {
+				tx.Rollback()
+				utils.Logger.Printf("获取失败:  客户_user：(%+v)\n错误(%+v)", _user, err)
+				continue
+			}
+
+			if _user.ID == 0 {
+				organizationUserA.InvitationUserId = 0
+			}
+		}
 
 		// 转移客户A企业到客户B企业
 		if err := tx.Table(models.OrganizationUserTbl()).Create(&organizationUserA).Error; err != nil {

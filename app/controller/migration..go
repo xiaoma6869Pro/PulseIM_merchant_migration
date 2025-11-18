@@ -30,6 +30,7 @@ func MigrationUserAppAB(c *gin.Context) {
 
 	if err := service.ImportUserAppAToAppB(params.DbAppB, *result, params.OrganizationAppBId); err != nil {
 		base.ResponseJson(c, utils.CodeInternalServerError, err.Error(), nil)
+		return
 	}
 
 	base.ResponseJson(c, utils.CodeSuccess, "用户导入成功", map[string]interface{}{
@@ -37,10 +38,23 @@ func MigrationUserAppAB(c *gin.Context) {
 	})
 }
 
+// 获取账户交易限制
+func getLimitAccountTransaction(length int, userInfo models.UserMigrationModel) (*models.UserMigrationModel, error) {
+	if length <= 0 {
+		return nil, fmt.Errorf("长度必须大于0")
+	}
+	result := userInfo
+	if len(userInfo.UserList) > length {
+		result.UserList = userInfo.UserList[:length]
+	}
+	return &result, nil
+}
+
+// RunMigration 运行数据迁移
 func RunMigration(conf models.AppConf) {
 	result, err := service.GetVerifyUserAppAB(conf.DbAppA, conf.DbAppB, conf.OrganizationAppAId)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("验证用户AppAB出错误:%s\n", err.Error())
 		return
 	}
 	if len(result.UserList) == 0 {
@@ -48,7 +62,15 @@ func RunMigration(conf models.AppConf) {
 		return
 	}
 
-	if err := service.ImportUserAppAToAppB(conf.DbAppB, *result, conf.OrganizationAppBId); err != nil {
-		fmt.Println(err)
+	ret, err := getLimitAccountTransaction(15, *result)
+	if err != nil {
+		fmt.Printf("获取账户交易限制失败%+v\n", err)
+		return
 	}
+
+	if err := service.ImportUserAppAToAppB(conf.DbAppB, *ret, conf.OrganizationAppBId); err != nil {
+		fmt.Printf("转移客户A到客户B出现错误:%s\n", err.Error())
+		return
+	}
+	fmt.Println("=========================== 所有交易迁移成功 ===========================")
 }
