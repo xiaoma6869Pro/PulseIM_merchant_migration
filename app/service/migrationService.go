@@ -9,6 +9,20 @@ import (
 	"com.pulseIM/db"
 )
 
+func GetUniqueDuplicateUser(records []models.User) []models.User {
+	seen := make(map[string]bool)
+	var unique []models.User
+	for _, record := range records {
+		if seen[record.PhoneNumber] {
+			continue
+		}
+		seen[record.PhoneNumber] = true
+		unique = append(unique, record)
+	}
+
+	return unique
+}
+
 // 删除重复手机客户A和客户B
 func removeDuplicates(info *models.UserMigrationModel) {
 	monitorDuplicatePhone := make(map[string]struct{})
@@ -48,7 +62,7 @@ func GetVerifyUserAppAB(dbAppA, dbAppB string, organizationID int) (*models.User
 		userIDs = append(userIDs, u.UserId)
 	}
 
-	if err := connectToDbAppA.Table(models.UserTbl()).Where("deleted_at IS NULL and id IN ?", userIDs).Scan(&userMigrationModel.UserList).Error; err != nil {
+	if err := connectToDbAppA.Table(models.UserTbl()).Where("deleted_at IS NULL AND id IN ?", userIDs).Scan(&userMigrationModel.UserList).Error; err != nil {
 		return nil, err
 	}
 	// 查看用户A-App userMigrationModel.UserList是否空白
@@ -63,8 +77,14 @@ func GetVerifyUserAppAB(dbAppA, dbAppB string, organizationID int) (*models.User
 			return nil, err
 		}
 		// 找重复用户跟用户-App-B相关
-		connectToDbAppB.Table(models.UserTbl()).Where("phone_number IN ?", phoneNumberList).Scan(&userMigrationModel.DuplicateUserList)
+		connectToDbAppB.Table(models.UserTbl()).Where("phone_number IN ? AND deleted_at IS NULL", phoneNumberList).Scan(&userMigrationModel.DuplicateUserList)
 		if userMigrationModel.DuplicateUserList != nil {
+			var duplicatePhoneStr string
+			userMigrationModel.DuplicateUserList = GetUniqueDuplicateUser(userMigrationModel.DuplicateUserList)
+			for _, u := range userMigrationModel.DuplicateUserList {
+				duplicatePhoneStr += fmt.Sprintf("%s,", u.PhoneNumber)
+			}
+			utils.Logger.Printf("重复手机号记录: %v\n", duplicatePhoneStr)
 			// 防止重复转移
 			removeDuplicates(&userMigrationModel)
 		}
@@ -121,7 +141,7 @@ func ImportUserAppAToAppB(dbAppB string, userMigrationModel models.UserMigration
 		organizationUserA.ID = 0
 
 		if organizationUserA.InvitationUserId > 0 {
-			
+
 			var _user models.User
 			if err := conn.Table(models.UserTbl()).Where("id = ?", organizationUserA.InvitationUserId).Find(&_user).Error; err != nil {
 				tx.Rollback()
@@ -147,4 +167,72 @@ func ImportUserAppAToAppB(dbAppB string, userMigrationModel models.UserMigration
 		}
 	}
 	return nil
+}
+
+func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info models.UserMigrationModel) error {
+	if dbAppB == "" {
+		return fmt.Errorf("数据库昵称不能为空")
+	}
+
+	if organizationID == 0 {
+		return fmt.Errorf("没有找到手机号列表")
+	}
+
+	if info.DuplicateUserList != nil {
+		return fmt.Errorf("暂时没有重复记录")
+	}
+
+	conn, _ := db.GetConnectionDB(dbAppB)
+
+	for _, duplicateUser := range info.DuplicateUserList {
+		var user models.User
+		if err := conn.Table(models.UserTbl()).Where("phone_number = ?", duplicateUser.PhoneNumber).Find(&user).Error; err != nil {
+			utils.Logger.Printf("获取重复客户记录失败: %v\n", duplicateUser.PhoneNumber)
+			continue
+		}
+
+		if user.ID > 0 {
+			continue
+		}
+
+		orgUser := models.OrganizationUser{
+			OrganizationId:   uint(organizationID),
+			UserId:           user.ID,
+			UniqueValue:      strconv.Itoa(int(organizationID)) + "-" + strconv.Itoa(int(user.ID)),
+			InvitationUserId: getPreviousOrg(info, duplicateUser.PhoneNumber).InvitationUserId,
+		}
+
+		if orgUser.InvitationUserId > 0 {
+			var _user models.User
+			if err := conn.Table(models.UserTbl()).Where("id = ?", orgUser.InvitationUserId).Find(&_user).Error; err != nil {
+				utils.Logger.Printf("获取失败:  客户_user：(%+v)\n错误(%+v)", _user, err)
+				continue
+			}
+			if _user.ID == 0 {
+				orgUser.InvitationUserId = 0
+			}
+		}
+		if err := conn.Table(models.OrganizationUserTbl()).Create(&orgUser).Error; err != nil {
+			utils.Logger.Printf("付客户企业出错误: %v\n", orgUser)
+			continue
+		}
+	}
+	return nil
+}
+
+func getPreviousOrg(info models.UserMigrationModel, phoneNumber string) (org models.OrganizationUser) {
+	var userID uint
+	for _, user := range info.UserList {
+		if user.PhoneNumber == phoneNumber {
+			userID = user.ID
+			break
+		}
+	}
+	for _, orgUser := range info.OrganizationUserList {
+		if orgUser.UserId == userID {
+			org = orgUser
+			break
+		}
+	}
+	return
 }
