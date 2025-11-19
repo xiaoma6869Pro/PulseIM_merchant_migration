@@ -178,7 +178,7 @@ func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info m
 		return fmt.Errorf("没有找到手机号列表")
 	}
 
-	if info.DuplicateUserList != nil {
+	if info.DuplicateUserList == nil {
 		return fmt.Errorf("暂时没有重复记录")
 	}
 
@@ -191,7 +191,7 @@ func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info m
 			continue
 		}
 
-		if user.ID > 0 {
+		if user.ID == 0 {
 			continue
 		}
 

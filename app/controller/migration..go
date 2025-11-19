@@ -68,15 +68,15 @@ func RunMigration(conf models.AppConf) {
 	//	return
 	//}
 
-	//if err := service.ImportUserAppAToAppB(conf.DbAppB, *result, conf.OrganizationAppBId); err != nil {
-	//	fmt.Printf("转移客户A到客户B出现错误:%s\n", err.Error())
-	//	return
-	//}
+	if err := service.ImportUserAppAToAppB(conf.DbAppB, *result, conf.OrganizationAppBId); err != nil {
+		fmt.Printf("转移客户A到客户B出现错误:%s\n", err.Error())
+		return
+	}
 
-	//if err := service.AssignOrganizationToExitingClient(conf.DbAppB, conf.OrganizationAppBId, *result); err != nil {
-	//	fmt.Printf("内部服务有问题%v", err)
-	//
-	//}
+	if err := service.AssignOrganizationToExitingClient(conf.DbAppB, conf.OrganizationAppBId, *result); err != nil {
+		fmt.Printf("内部服务有问题%v", err)
+
+	}
 
 	fmt.Println("=========================== 所有交易迁移成功 ===========================")
 }
