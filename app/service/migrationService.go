@@ -3,10 +3,12 @@ package service
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	"com.pulseIM/app/models"
 	"com.pulseIM/app/utils"
 	"com.pulseIM/db"
+	"github.com/panjf2000/ants/v2"
 )
 
 func GetUniqueDuplicateUser(records []models.User) []models.User {
@@ -115,61 +117,82 @@ func ImportUserAppAToAppB(dbAppB string, userMigrationModel models.UserMigration
 		return fmt.Errorf("组织不存在")
 	}
 
-	for _, u := range userMigrationModel.UserList {
-		user := u
-		// 查看用户企业A
-		organizationUserA := models.OrganizationUser{}
-		for _, org := range userMigrationModel.OrganizationUserList {
-			if user.ID == org.UserId {
-				organizationUserA = org
-				break
-			}
-		}
-
-		tx := conn.Begin()
-		// 转移客户A企业到客户B企业
-		user.ID = 0
-		if err := tx.Table(models.UserTbl()).Create(&user).Error; err != nil {
-			tx.Rollback()
-			utils.Logger.Printf("创建用户失败: %v\n", err)
-			continue
-		}
-
-		organizationUserA.OrganizationId = organization.ID
-		organizationUserA.UniqueValue = strconv.Itoa(int(organization.ID)) + "-" + strconv.Itoa(int(user.ID))
-		organizationUserA.UserId = user.ID
-		organizationUserA.ID = 0
-
-		if organizationUserA.InvitationUserId > 0 {
-
-			var _user models.User
-			if err := conn.Table(models.UserTbl()).Where("id = ?", organizationUserA.InvitationUserId).Find(&_user).Error; err != nil {
-				tx.Rollback()
-				utils.Logger.Printf("获取失败:  客户_user：(%+v)\n错误(%+v)", _user, err)
-				continue
-			}
-
-			if _user.ID == 0 {
-				organizationUserA.InvitationUserId = 0
-			}
-		}
-
-		// 转移客户A企业到客户B企业
-		if err := tx.Table(models.OrganizationUserTbl()).Create(&organizationUserA).Error; err != nil {
-			tx.Rollback()
-			utils.Logger.Printf("插入失败 organization_user %+v: %v\n", organizationUserA, err)
-			continue
-		}
-
-		if err := tx.Commit().Error; err != nil {
-			utils.Logger.Printf("提交失败:  客户：(%+v)\n企业用户(%+v): %v\n", user, organizationUserA, err)
-			continue
-		}
+	// 创建ants协程池
+	pool, err := ants.NewPool(10, ants.WithPanicHandler(func(i interface{}) {
+		utils.Logger.Printf("协程panic: %v", i)
+	}))
+	if err != nil {
+		return fmt.Errorf("创建协程池失败: %v", err)
 	}
+
+	defer pool.Release()
+	var wg sync.WaitGroup
+
+	for _, u := range userMigrationModel.UserList {
+		wg.Add(1)
+		user := u
+
+		pool.Submit(func() {
+			defer wg.Done()
+
+			// 查看用户企业A
+			organizationUserA := models.OrganizationUser{}
+			for _, org := range userMigrationModel.OrganizationUserList {
+				if user.ID == org.UserId {
+					organizationUserA = org
+					break
+				}
+			}
+
+			tx := conn.Begin()
+
+			// 转移客户A企业到客户B企业
+			user.ID = 0
+			if err := tx.Table(models.UserTbl()).Create(&user).Error; err != nil {
+				tx.Rollback()
+				utils.Logger.Printf("创建用户失败: %v\n", err)
+				return
+			}
+
+			organizationUserA.OrganizationId = organization.ID
+			organizationUserA.UniqueValue = strconv.Itoa(int(organization.ID)) + "-" + strconv.Itoa(int(user.ID))
+			organizationUserA.UserId = user.ID
+			organizationUserA.ID = 0
+
+			if organizationUserA.InvitationUserId > 0 {
+
+				var _user models.User
+				if err := conn.Table(models.UserTbl()).Where("id = ?", organizationUserA.InvitationUserId).Find(&_user).Error; err != nil {
+					tx.Rollback()
+					utils.Logger.Printf("获取失败:  客户_user：(%+v)\n错误(%+v)", _user, err)
+					return
+				}
+
+				if _user.ID == 0 {
+					organizationUserA.InvitationUserId = 0
+				}
+			}
+
+			// 转移客户A企业到客户B企业
+			if err := tx.Table(models.OrganizationUserTbl()).Create(&organizationUserA).Error; err != nil {
+				tx.Rollback()
+				utils.Logger.Printf("插入失败 organization_user %+v: %v\n", organizationUserA, err)
+				return
+			}
+
+			if err := tx.Commit().Error; err != nil {
+				utils.Logger.Printf("提交失败:  客户：(%+v)\n企业用户(%+v): %v\n", user, organizationUserA, err)
+				return
+			}
+		})
+	}
+	wg.Wait()
+
 	return nil
 }
 
 func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info models.UserMigrationModel) error {
+
 	if dbAppB == "" {
 		return fmt.Errorf("数据库昵称不能为空")
 	}
@@ -184,39 +207,57 @@ func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info m
 
 	conn, _ := db.GetConnectionDB(dbAppB)
 
-	for _, duplicateUser := range info.DuplicateUserList {
-		var user models.User
-		if err := conn.Table(models.UserTbl()).Where("phone_number = ?", duplicateUser.PhoneNumber).Find(&user).Error; err != nil {
-			utils.Logger.Printf("获取重复客户记录失败: %v\n", duplicateUser.PhoneNumber)
-			continue
-		}
-
-		if user.ID == 0 {
-			continue
-		}
-
-		orgUser := models.OrganizationUser{
-			OrganizationId:   uint(organizationID),
-			UserId:           user.ID,
-			UniqueValue:      strconv.Itoa(int(organizationID)) + "-" + strconv.Itoa(int(user.ID)),
-			InvitationUserId: getPreviousOrg(info, duplicateUser.PhoneNumber).InvitationUserId,
-		}
-
-		if orgUser.InvitationUserId > 0 {
-			var _user models.User
-			if err := conn.Table(models.UserTbl()).Where("id = ?", orgUser.InvitationUserId).Find(&_user).Error; err != nil {
-				utils.Logger.Printf("获取失败:  客户_user：(%+v)\n错误(%+v)", _user, err)
-				continue
-			}
-			if _user.ID == 0 {
-				orgUser.InvitationUserId = 0
-			}
-		}
-		if err := conn.Table(models.OrganizationUserTbl()).Create(&orgUser).Error; err != nil {
-			utils.Logger.Printf("付客户企业出错误: %v\n", orgUser)
-			continue
-		}
+	// 创建ants协程池
+	pool, err := ants.NewPool(10, ants.WithPanicHandler(func(i interface{}) {
+		utils.Logger.Printf("协程panic: %v", i)
+	}))
+	if err != nil {
+		return fmt.Errorf("创建协程池失败: %v", err)
 	}
+
+	defer pool.Release()
+	var wg sync.WaitGroup
+
+	for _, duplicateUser := range info.DuplicateUserList {
+		wg.Add(1)
+		var user models.User
+
+		pool.Submit(func() {
+			defer wg.Done()
+
+			if err := conn.Table(models.UserTbl()).Where("phone_number = ?", duplicateUser.PhoneNumber).Find(&user).Error; err != nil {
+				utils.Logger.Printf("获取重复客户记录失败: %v\n", duplicateUser.PhoneNumber)
+				return
+			}
+
+			if user.ID == 0 {
+				return
+			}
+
+			orgUser := models.OrganizationUser{
+				OrganizationId:   uint(organizationID),
+				UserId:           user.ID,
+				UniqueValue:      strconv.Itoa(int(organizationID)) + "-" + strconv.Itoa(int(user.ID)),
+				InvitationUserId: getPreviousOrg(info, duplicateUser.PhoneNumber).InvitationUserId,
+			}
+
+			if orgUser.InvitationUserId > 0 {
+				var _user models.User
+				if err := conn.Table(models.UserTbl()).Where("id = ?", orgUser.InvitationUserId).Find(&_user).Error; err != nil {
+					utils.Logger.Printf("获取失败:  客户_user：(%+v)\n错误(%+v)", _user, err)
+					return
+				}
+				if _user.ID == 0 {
+					orgUser.InvitationUserId = 0
+				}
+			}
+			if err := conn.Table(models.OrganizationUserTbl()).Create(&orgUser).Error; err != nil {
+				utils.Logger.Printf("付客户企业出错误: %v\n", orgUser)
+				return
+			}
+		})
+	}
+	wg.Wait()
 	return nil
 }
 

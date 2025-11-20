@@ -1,13 +1,16 @@
 package service
 
 import (
-	"fmt"
-	"strconv"
-	"time"
+	"github.com/panjf2000/ants/v2"
 
 	"com.pulseIM/app/models"
 	"com.pulseIM/app/utils"
 	"com.pulseIM/db"
+
+	"fmt"
+	"sync"
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -28,45 +31,59 @@ func DeleteUserBaseOrganizationID(dbName string, orgID int) error {
 
 	// 获取企业客户
 	var organizationUserList []models.OrganizationUser
-	if err := mysql.Table(models.OrganizationUserTbl()).Limit(100).Where("deleted_at IS NULL AND organization_id = ?", orgID).Scan(&organizationUserList).Error; err != nil {
+	if err := mysql.Unscoped().Table(models.OrganizationUserTbl()).Where("deleted_at IS NOT NULL AND organization_id = ?", orgID).Scan(&organizationUserList).Error; err != nil {
 		return fmt.Errorf("获取组织用户失败: %v", err)
 	}
 	if organizationUserList == nil {
 		return fmt.Errorf("暂时没组织用户")
 	}
 
-	// 使用组织用户列表检查客户根据ID
-	for _, organizationUser := range organizationUserList {
-		var user models.User
-		if err := mysql.Table(models.UserTbl()).Where("id = ? AND deleted_at IS NULL", organizationUser.UserId).First(&user).Error; err != nil {
-			utils.Logger.Printf("获取客户失败: %v", organizationUser)
-			continue
-		}
-
-		if user.ID == 0 {
-			continue
-		}
-
-		tx := mysql.Begin()
-
-		user.UniqueValue = strconv.Itoa(int(orgID)) + "-" + strconv.Itoa(int(user.ID))
-		user.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
-		if err := tx.Table(models.UserTbl()).Where("id = ?", user.ID).Updates(user).Error; err != nil {
-			tx.Rollback()
-			utils.Logger.Printf("删除客户失败: %v", user)
-		}
-
-		organizationUser.UniqueValue = strconv.Itoa(int(orgID)) + "-" + strconv.Itoa(int(user.ID))
-		organizationUser.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
-		if err := tx.Table(models.OrganizationUserTbl()).Where("user_id = ? and organization_id = ?", organizationUser.UserId, orgID).Updates(&organizationUser).Error; err != nil {
-			tx.Rollback()
-			utils.Logger.Printf("更新企业客户失败: %v", user)
-		}
-
-		if err := tx.Commit().Error; err != nil {
-			tx.Rollback()
-			utils.Logger.Printf("提交失败: %v", organizationUser)
-		}
+	// 创建ants协程池
+	pool, err := ants.NewPool(30, ants.WithPanicHandler(func(i interface{}) {
+		utils.Logger.Printf("协程panic: %v", i)
+	}))
+	if err != nil {
+		return fmt.Errorf("创建协程池失败: %v", err)
 	}
+	defer pool.Release()
+	var wg sync.WaitGroup
+
+	userBindMultipleOrgList := ""
+	// 使用协程池处理
+	for _, organizationUser := range organizationUserList {
+		wg.Add(1)
+		orgUser := organizationUser
+		pool.Submit(func() {
+			defer wg.Done()
+
+			var user models.User
+			if err := mysql.Table(models.UserTbl()).Where("deleted_at IS NULL AND id = ?", orgUser.UserId).Find(&user).Error; err != nil {
+				utils.Logger.Printf("获取客户失败: %v", orgUser)
+				return
+			}
+
+			if user.ID == 0 {
+				return
+			}
+
+			// 查看客户绑定跟另外企业
+			var countOrgUser int64
+			if err := mysql.Table(models.OrganizationUserTbl()).Where("user_id = ? AND deleted_at IS NULL", user.ID).Count(&countOrgUser).Error; err != nil {
+				utils.Logger.Printf("统计企业客户失败: %v", orgUser)
+				return
+			}
+			if countOrgUser > 0 {
+				userBindMultipleOrgList += fmt.Sprintf("%d,", user.ID)
+				return
+			}
+			user.UniqueValue = fmt.Sprintf("%s%s-%s", user.AreaCode, user.PhoneNumber, time.Now().Format("20060102"))
+			user.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
+			if err := mysql.Table(models.UserTbl()).Where("id = ?", user.ID).Updates(user).Error; err != nil {
+				utils.Logger.Printf("删除客户失败: %v", user)
+			}
+		})
+	}
+	wg.Wait()
+	utils.Logger.Printf("客户绑定多企业列表：%v", userBindMultipleOrgList)
 	return nil
 }

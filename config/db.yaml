@@ -1,11 +1,17 @@
 # 数据库配置
 databases:
   dbAppA:
-    host: 18.167.196.68
+    host: 18.163.217.121
     port: "3306"
-    user: xin
-    password: "FsCCebY2LtbpYfjT"
-    name: xin
+    user: simpleim
+    password: "4LLsjhLDLMtnpkCW"
+    name: simpleim
+
+#    host: 18.167.196.68
+#    port: "3306"
+#    user: xin
+#    password: "FsCCebY2LtbpYfjT"
+#    name: xin
 
 #  dbAppB:
 #    host: 0.0.0.0
