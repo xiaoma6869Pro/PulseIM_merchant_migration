@@ -1,6 +1,6 @@
 # 迁移数据配置
 
 dbAppA: dbAppA                      # 名字查 App-A
-dbAppB: dbAppB                      # 名字查 App-B
-organizationAppAId: 4               # 企业ID App-A
-organizationAppBId: 94              # 企业ID App-B
+#dbAppB: dbAppB                      # 名字查 App-B
+organizationAppAId: 58               # 企业ID App-A
+#organizationAppBId: 94              # 企业ID App-B

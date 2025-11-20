@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	"com.pulseIM/app/controller"
 	"com.pulseIM/app/models"
+	"com.pulseIM/app/service"
 	"com.pulseIM/app/utils"
 	"com.pulseIM/db"
 	"com.pulseIM/router"
@@ -38,7 +38,10 @@ func automateRunMigrationAB() {
 		fmt.Errorf("YAML解析失败: %w", err)
 		return
 	}
-	controller.RunMigration(appConf)
+	//controller.RunMigration(appConf)
+	if err := service.DeleteUserBaseOrganizationID(appConf.DbAppA, appConf.OrganizationAppAId); err != nil {
+		fmt.Println(err)
+	}
 }
 
 func runApiService() {
@@ -62,4 +65,5 @@ func main() {
 	defer db.CloseDatabases()
 	automateRunMigrationAB()
 	//runApiService()
+
 }
