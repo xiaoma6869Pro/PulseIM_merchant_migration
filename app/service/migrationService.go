@@ -62,13 +62,13 @@ func GetVerifyUserAppAB(dbAppA, dbAppB string, organizationID int) (*models.User
 		userIDs = append(userIDs, u.UserId)
 	}
 
-	if err := connectToDbAppA.Table(models.UserTbl()).Where("deleted_at IS NULL AND id IN ?", userIDs).Scan(&userMigrationModel.UserList).Error; err != nil {
+	if err := connectToDbAppA.Table(models.UserTbl()).Where("deleted_at IS NULL AND id IN ?", userIDs).Scan(&userMigrationModel.OriginalUserList).Error; err != nil {
 		return nil, err
 	}
 	// 查看用户A-App userMigrationModel.UserList是否空白
-	if len(userMigrationModel.UserList) > 0 {
+	if len(userMigrationModel.OriginalUserList) > 0 {
 		var phoneNumberList []string
-		for _, user := range userMigrationModel.UserList {
+		for _, user := range userMigrationModel.OriginalUserList {
 			phoneNumberList = append(phoneNumberList, user.PhoneNumber)
 		}
 		//链接数据库 AppB
@@ -222,7 +222,7 @@ func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info m
 
 func getPreviousOrg(info models.UserMigrationModel, phoneNumber string) (org models.OrganizationUser) {
 	var userID uint
-	for _, user := range info.UserList {
+	for _, user := range info.OriginalUserList {
 		if user.PhoneNumber == phoneNumber {
 			userID = user.ID
 			break

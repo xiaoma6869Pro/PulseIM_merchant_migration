@@ -7,15 +7,21 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode"
 
 	"com.pulseIM/app/models"
 	"com.pulseIM/app/utils"
 	"com.pulseIM/db"
 )
 
+var HashBackup = ""
+
 func DecryptMD5(hash string) (string, error) {
 	hash = strings.TrimSpace(hash)
+	if HashBackup == hash {
+		fmt.Printf("======== HashBackup ======== %s", HashBackup)
+		return "", nil
+	}
+	HashBackup = hash
 	hashType := "md5"
 	apiURL := fmt.Sprintf("https://md5decrypt.net/en/Api/api.php?hash=%s&hash_type=%s&email=%s&code=%s",
 		url.QueryEscape(hash),
@@ -47,70 +53,21 @@ func DecryptMD5(hash string) (string, error) {
 	return result, nil
 }
 
-func CheckSecurePassword(dbName string) error {
+func CheckSecurePassword(dbName string) {
 	mysql, err := db.GetConnectionDB(dbName)
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	var userList []models.User
-	if err := mysql.Table(models.UserTbl()).Limit(10).Where("deleted_at IS NULL").Find(&userList).Error; err != nil {
-		return fmt.Errorf("failed to fetch users: %w", err)
+	if err := mysql.Table(models.UserTbl()).Limit(30000).Offset(0).Where("deleted_at IS NULL").Scan(&userList).Error; err != nil {
+		fmt.Errorf("failed to fetch users: %w", err)
 	}
 
 	for _, user := range userList {
 		decodedPassword, _ := DecryptMD5(user.Password)
-
-		isStrong := isStrongPassword(decodedPassword)
-
-		if isStrong {
-			utils.Logger.Printf("User ID %d has a strong password", user.ID)
-		} else {
-			utils.Logger.Printf("User ID %d has a weak password", user.ID)
+		if decodedPassword != "" {
+			utils.Logger.Printf("User ID %d has a weak password %s", user.ID, decodedPassword)
 		}
 	}
-
-	return nil
-}
-
-func isStrongPassword(password string) bool {
-	if len(password) < 8 {
-		return false
-	}
-
-	var (
-		hasUpper   bool
-		hasLower   bool
-		hasNumber  bool
-		hasSpecial bool
-	)
-
-	for _, char := range password {
-		switch {
-		case unicode.IsUpper(char):
-			hasUpper = true
-		case unicode.IsLower(char):
-			hasLower = true
-		case unicode.IsNumber(char):
-			hasNumber = true
-		case unicode.IsPunct(char) || unicode.IsSymbol(char):
-			hasSpecial = true
-		}
-	}
-
-	criteriaCount := 0
-	if hasUpper {
-		criteriaCount++
-	}
-	if hasLower {
-		criteriaCount++
-	}
-	if hasNumber {
-		criteriaCount++
-	}
-	if hasSpecial {
-		criteriaCount++
-	}
-
-	return criteriaCount >= 3
 }

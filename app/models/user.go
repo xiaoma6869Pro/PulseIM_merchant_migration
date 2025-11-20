@@ -31,6 +31,7 @@ func UserTbl() string {
 
 type UserMigrationModel struct {
 	DuplicateUserList    []User // 验证客户A表根据客户B
+	OriginalUserList     []User // 源数据
 	UserList             []User // 客户A表
 	OrganizationUserList []OrganizationUser
 }

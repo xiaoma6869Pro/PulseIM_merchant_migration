@@ -57,16 +57,11 @@ func RunMigration(conf models.AppConf) {
 		fmt.Printf("验证用户AppAB出错误:%s\n", err.Error())
 		return
 	}
+
 	if len(result.UserList) == 0 {
 		fmt.Println("========================AppUserA 暂时没数据=======================")
 		return
 	}
-
-	//ret, err := getLimitAccountTransaction(10, *result)
-	//if err != nil {
-	//	fmt.Printf("获取账户交易限制失败%+v\n", err)
-	//	return
-	//}
 
 	if err := service.ImportUserAppAToAppB(conf.DbAppB, *result, conf.OrganizationAppBId); err != nil {
 		fmt.Printf("转移客户A到客户B出现错误:%s\n", err.Error())
