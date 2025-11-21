@@ -49,6 +49,7 @@ func DeleteUserBaseOrganizationID(dbName string, orgID int) error {
 	var wg sync.WaitGroup
 
 	userBindMultipleOrgList := ""
+
 	// 使用协程池处理
 	for _, organizationUser := range organizationUserList {
 		wg.Add(1)

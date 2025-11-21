@@ -31,8 +31,8 @@ func removeDuplicates(info *models.UserMigrationModel) {
 	for _, u := range info.DuplicateUserList {
 		monitorDuplicatePhone[u.PhoneNumber] = struct{}{}
 	}
-	filtered := info.UserList[:0]
-	for _, u := range info.UserList {
+	filtered := info.OriginalUserList[:0]
+	for _, u := range info.OriginalUserList {
 		if _, exists := monitorDuplicatePhone[u.PhoneNumber]; !exists {
 			filtered = append(filtered, u)
 		}
