@@ -27,6 +27,7 @@ func splitCountIntoBatches(totalCount int64, batchSize int) []int {
 	return batches
 }
 
+// MigrationUserAppService 按排除组织实现用户应用迁移
 func MigrationUserAppService(excludeOrgIDs []int, dbName string) error {
 	if excludeOrgIDs == nil && dbName == "" {
 		return fmt.Errorf("excludeOrgIDs或dbName不能为空")
