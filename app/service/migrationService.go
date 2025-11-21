@@ -67,6 +67,7 @@ func GetVerifyUserAppAB(dbAppA, dbAppB string, organizationID int) (*models.User
 	if err := connectToDbAppA.Table(models.UserTbl()).Where("deleted_at IS NULL AND id IN ?", userIDs).Scan(&userMigrationModel.OriginalUserList).Error; err != nil {
 		return nil, err
 	}
+
 	// 查看用户A-App userMigrationModel.UserList是否空白
 	if len(userMigrationModel.OriginalUserList) > 0 {
 		var phoneNumberList []string
@@ -238,7 +239,7 @@ func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info m
 				OrganizationId:   uint(organizationID),
 				UserId:           user.ID,
 				UniqueValue:      strconv.Itoa(int(organizationID)) + "-" + strconv.Itoa(int(user.ID)),
-				InvitationUserId: getPreviousOrg(info, duplicateUser.PhoneNumber).InvitationUserId,
+				InvitationUserId: getPreviousOrgUser(info, duplicateUser.PhoneNumber).InvitationUserId,
 			}
 
 			if orgUser.InvitationUserId > 0 {
@@ -261,19 +262,25 @@ func AssignOrganizationToExitingClient(dbAppB string, organizationID int, info m
 	return nil
 }
 
-func getPreviousOrg(info models.UserMigrationModel, phoneNumber string) (org models.OrganizationUser) {
+func getPreviousOrgUser(info models.UserMigrationModel, phoneNumber string) (org models.OrganizationUser) {
 	var userID uint
+
 	for _, user := range info.OriginalUserList {
 		if user.PhoneNumber == phoneNumber {
 			userID = user.ID
 			break
 		}
 	}
+
+	if userID == 0 {
+		return models.OrganizationUser{}
+	}
+
 	for _, orgUser := range info.OrganizationUserList {
 		if orgUser.UserId == userID {
-			org = orgUser
-			break
+			return orgUser
 		}
 	}
-	return
+
+	return models.OrganizationUser{}
 }
