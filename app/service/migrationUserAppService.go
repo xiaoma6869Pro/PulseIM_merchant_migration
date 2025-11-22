@@ -39,9 +39,8 @@ func MigrationUserAppService(excludeOrgIDs []int, dbName string) error {
 	}
 
 	var countOrgUser int64
-	if err := mysql.Table(models.OrganizationUserTbl()).
-		Where("deleted_at IS NULL AND organization_id NOT IN ?", excludeOrgIDs).
-		Count(&countOrgUser).Error; err != nil {
+	whereOrgUser := "deleted_at IS NULL AND organization_id NOT IN ?"
+	if err := mysql.Table(models.OrganizationUserTbl()).Where(whereOrgUser, excludeOrgIDs).Count(&countOrgUser).Error; err != nil {
 		return err
 	}
 
@@ -53,7 +52,7 @@ func MigrationUserAppService(excludeOrgIDs []int, dbName string) error {
 	var offset int
 	batches := splitCountIntoBatches(countOrgUser, batchSize)
 
-	pool, err := ants.NewPool(30, ants.WithPanicHandler(func(i interface{}) {
+	pool, err := ants.NewPool(50, ants.WithPanicHandler(func(i interface{}) {
 		utils.Logger.Printf("协程panic: %v", i)
 	}))
 	if err != nil {
@@ -64,19 +63,18 @@ func MigrationUserAppService(excludeOrgIDs []int, dbName string) error {
 
 	for _, currentBatchSize := range batches {
 		var orgUserList []models.OrganizationUser
-		err := mysql.Table(models.OrganizationUserTbl()).Where("deleted_at IS NULL AND organization_id NOT IN ?", excludeOrgIDs).Offset(offset).Limit(currentBatchSize).Find(&orgUserList).Error
+		err := mysql.Table(models.OrganizationUserTbl()).Where(whereOrgUser, excludeOrgIDs).Offset(offset).Limit(currentBatchSize).Find(&orgUserList).Error
 		if err != nil {
 			return err
 		}
 
-		if len(orgUserList) == 0 {
+		if orgUserList == nil {
 			break
 		}
 
 		for _, orgUser := range orgUserList {
 			wg.Add(1)
 			u := orgUser
-
 			pool.Submit(func() {
 				defer wg.Done()
 				userApp := models.UserApp{

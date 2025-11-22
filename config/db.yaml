@@ -9,14 +9,14 @@ databases:
 
     host: 18.167.196.68
     port: "3306"
+    user: old
+    password: "hY6xksyk7K3PjAaD"
+    name: old
+
+  dbAppB:
+    host: 18.167.196.68
+    port: "3306"
     user: xin
     password: "FsCCebY2LtbpYfjT"
     name: xin
-
-#  dbAppB:
-#    host: 0.0.0.0
-#    port: "3306"
-#    user: simpleim
-#    password: ""
-#    name: simpleim
 

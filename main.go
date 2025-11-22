@@ -39,8 +39,11 @@ func automateRunMigrationAB() {
 		return
 	}
 	//controller.RunMigration(appConf)
-	if err := service.MigrationUserAppService([]int{92, 93, 94, 95}, appConf.DbAppA); err != nil {
-		fmt.Println(err)
+	//if err := service.MigrationUserAppService([]int{92, 93, 94, 95}, appConf.DbAppA); err != nil {
+	//	fmt.Println(err)
+	//}
+	if err := service.MigrationNewUserAppInOldDbToNewDb(appConf.DbAppA, appConf.DbAppB); err != nil {
+		log.Fatalf(err.Error())
 	}
 }
 
